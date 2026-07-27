@@ -1,0 +1,12 @@
+# 依赖目录与 pnpm 本地缓存
+node_modules/
+.pnpm-store/
+
+# 构建产物
+dist/
+dist-electron/
+release/
+
+# 本地日志与系统文件
+*.log
+.DS_Store
