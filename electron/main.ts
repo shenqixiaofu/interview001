@@ -3,10 +3,12 @@ import path from "node:path";
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { ClaudeRunner } from "./claude-runner";
 import { ConversationStore } from "./store";
-import type { ChatMessage } from "./types";
+import { ProviderStore } from "./provider-store";
+import type { ChatMessage, ProviderInput } from "./types";
 
 let mainWindow: BrowserWindow;
 let store: ConversationStore;
+let providerStore: ProviderStore;
 const runner = new ClaudeRunner();
 
 function createWindow(): void {
@@ -34,7 +36,7 @@ function registerIpc(): void {
   ipcMain.handle("app:get-bootstrap", async () => {
     if (store.getState().conversations.length === 0) await store.createConversation();
     const claudeVersion = await runner.getVersion();
-    return { ...store.getState(), claudeAvailable: Boolean(claudeVersion), claudeVersion };
+    return { ...store.getState(), ...providerStore.getState(), claudeAvailable: Boolean(claudeVersion), claudeVersion };
   });
 
   ipcMain.handle("conversation:create", () => store.createConversation());
@@ -42,6 +44,22 @@ function registerIpc(): void {
   ipcMain.handle("conversation:model", (_event, id: string, model: string) =>
     store.updateConversation(id, { model })
   );
+
+  // Provider IPC 只向渲染层返回脱敏配置，API Key 始终留在主进程。
+  ipcMain.handle("provider:save", (_event, input: ProviderInput) => providerStore.saveProvider(input));
+  ipcMain.handle("provider:delete", (_event, id: string) => providerStore.deleteProvider(id));
+  ipcMain.handle("provider:select", (_event, id: string) => providerStore.selectProvider(id));
+  ipcMain.handle("provider:models", async (_event, input: ProviderInput) => {
+    const baseUrl = input.baseUrl.trim().replace(/\/$/, "");
+    const apiKey = input.apiKey?.trim() || (input.id ? providerStore.getApiKey(input.id) : "");
+    if (!baseUrl || !apiKey) throw new Error("请先填写 Base URL 和 API Key");
+    const response = await fetch(`${baseUrl}/v1/models`, {
+      headers: { Authorization: `Bearer ${apiKey}`, "x-api-key": apiKey }
+    });
+    if (!response.ok) throw new Error(`查询模型失败：HTTP ${response.status}`);
+    const payload = await response.json() as { data?: Array<{ id?: string }> };
+    return (payload.data ?? []).map((item) => item.id).filter((id): id is string => Boolean(id)).sort();
+  });
 
   ipcMain.handle("project:choose", async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -58,6 +76,9 @@ function registerIpc(): void {
     if (!conversation) throw new Error("会话不存在");
     if (!prompt) throw new Error("消息不能为空");
     if (runner.isRunning(conversationId)) throw new Error("当前会话正在生成回复");
+    const provider = providerStore.getActiveProvider();
+    if (!provider) throw new Error("请先在设置中添加并选择服务商");
+    const apiKey = providerStore.getApiKey(provider.id);
 
     const now = new Date().toISOString();
     const userMessage: ChatMessage = {
@@ -88,6 +109,8 @@ function registerIpc(): void {
         prompt,
         model: conversation.model,
         cwd: store.getState().settings.projectPath,
+        baseUrl: provider.baseUrl,
+        apiKey,
         sessionId,
         onText: (text) => {
           content += text;
@@ -130,7 +153,9 @@ function registerIpc(): void {
 
 app.whenReady().then(async () => {
   store = new ConversationStore(app.getPath("userData"), app.getPath("home"));
+  providerStore = new ProviderStore(app.getPath("userData"));
   await store.load();
+  await providerStore.load();
   registerIpc();
   createWindow();
 

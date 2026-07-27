@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import type { BootstrapData, Conversation, StreamChunk, StreamDone, StreamError } from "../electron/types";
+import type { BootstrapData, Conversation, ProviderState, StreamChunk, StreamDone, StreamError } from "../electron/types";
 import { ChatHeader } from "./components/ChatHeader";
 import { Composer } from "./components/Composer";
 import { MessageList } from "./components/MessageList";
+import { ProviderSettings } from "./components/ProviderSettings";
 import { Sidebar } from "./components/Sidebar";
 
 function replaceConversation(items: Conversation[], next: Conversation): Conversation[] {
@@ -18,6 +19,7 @@ export default function App() {
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set());
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notice, setNotice] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const conversation = useMemo(
     () => data?.conversations.find((item) => item.id === selectedId) ?? null,
@@ -136,6 +138,19 @@ export default function App() {
     setData((current) => current && { ...current, settings });
   };
 
+  const applyProviderState = (state: ProviderState): void => {
+    setData((current) => current && { ...current, ...state });
+  };
+
+  const selectProvider = async (id: string): Promise<void> => {
+    const state = await window.desktopApi.selectProvider(id);
+    applyProviderState(state);
+    const provider = state.providers.find((item) => item.id === id);
+    if (selectedId && provider?.models[0] && !provider.models.includes(conversation?.model ?? "")) {
+      await updateModel(provider.models[0]);
+    }
+  };
+
   const sendMessage = async (prompt: string): Promise<void> => {
     if (!selectedId) return;
     setRunningIds((current) => new Set(current).add(selectedId));
@@ -188,18 +203,31 @@ export default function App() {
           projectPath={data.settings.projectPath}
           claudeAvailable={data.claudeAvailable}
           claudeVersion={data.claudeVersion}
+          providers={data.providers}
+          activeProviderId={data.activeProviderId}
           onMenu={() => setSidebarOpen(true)}
           onModelChange={(model) => void updateModel(model)}
+          onProviderChange={(id) => void selectProvider(id)}
+          onOpenSettings={() => setSettingsOpen(true)}
           onChooseProject={() => void chooseProject()}
         />
         <MessageList conversation={conversation} />
         <Composer
-          disabled={!conversation || !data.claudeAvailable}
+          disabled={!conversation || !data.claudeAvailable || !data.activeProviderId}
           running={running}
           onSend={sendMessage}
           onStop={() => selectedId && void window.desktopApi.stopGeneration(selectedId)}
         />
       </section>
+      {settingsOpen && (
+        <ProviderSettings
+          providers={data.providers}
+          activeProviderId={data.activeProviderId}
+          onClose={() => setSettingsOpen(false)}
+          onChange={applyProviderState}
+          onNotice={setNotice}
+        />
+      )}
       {notice && <div className="toast" role="alert">{notice}</div>}
     </div>
   );

@@ -22,12 +22,33 @@ export interface AppSettings {
   projectPath: string;
 }
 
+export interface ProviderConfig {
+  id: string;
+  name: string;
+  baseUrl: string;
+  models: string[];
+  hasApiKey: boolean;
+}
+
+export interface ProviderInput {
+  id?: string;
+  name: string;
+  baseUrl: string;
+  apiKey?: string;
+  models: string[];
+}
+
+export interface ProviderState {
+  providers: ProviderConfig[];
+  activeProviderId: string | null;
+}
+
 export interface PersistedState {
   conversations: Conversation[];
   settings: AppSettings;
 }
 
-export interface BootstrapData extends PersistedState {
+export interface BootstrapData extends PersistedState, ProviderState {
   claudeAvailable: boolean;
   claudeVersion: string;
 }
@@ -53,6 +74,10 @@ export interface DesktopApi {
   createConversation: () => Promise<Conversation>;
   deleteConversation: (id: string) => Promise<PersistedState>;
   updateConversationModel: (id: string, model: string) => Promise<Conversation>;
+  saveProvider: (input: ProviderInput) => Promise<ProviderState>;
+  deleteProvider: (id: string) => Promise<ProviderState>;
+  selectProvider: (id: string) => Promise<ProviderState>;
+  queryProviderModels: (input: ProviderInput) => Promise<string[]>;
   chooseProject: () => Promise<AppSettings>;
   sendMessage: (conversationId: string, prompt: string) => Promise<Conversation>;
   stopGeneration: (conversationId: string) => Promise<void>;

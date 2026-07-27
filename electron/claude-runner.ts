@@ -5,6 +5,8 @@ interface RunOptions {
   prompt: string;
   model: string;
   cwd: string;
+  baseUrl: string;
+  apiKey: string;
   sessionId?: string;
   onText: (text: string) => void;
   onSession: (sessionId: string) => void;
@@ -46,7 +48,13 @@ export class ClaudeRunner {
 
     const child = spawn("claude", args, {
       cwd: options.cwd,
-      env: { ...process.env, NO_COLOR: "1" },
+      // 每次运行显式注入当前服务商，避免依赖终端中的全局环境配置。
+      env: {
+        ...process.env,
+        NO_COLOR: "1",
+        ANTHROPIC_BASE_URL: options.baseUrl,
+        ANTHROPIC_AUTH_TOKEN: options.apiKey
+      },
       stdio: ["ignore", "pipe", "pipe"]
     });
     this.processes.set(options.conversationId, child);
