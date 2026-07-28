@@ -78,6 +78,10 @@ function registerIpc(): void {
     if (runner.isRunning(conversationId)) throw new Error("当前会话正在生成回复");
     const provider = providerStore.getActiveProvider();
     if (!provider) throw new Error("请先在设置中添加并选择服务商");
+    if (provider.models.length > 0 && !provider.models.includes(conversation.model)) {
+      // 发送前强校验当前模型，避免默认 sonnet/haiku 别名绕过服务商模型配置。
+      throw new Error(`当前会话模型 ${conversation.model} 不在服务商 ${provider.name} 的模型列表中，请先切换到已配置模型`);
+    }
     const apiKey = providerStore.getApiKey(provider.id);
 
     const now = new Date().toISOString();

@@ -107,6 +107,14 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [notice]);
 
+  useEffect(() => {
+    if (!data || !selectedId || !conversation || runningIds.has(selectedId)) return;
+    const activeProvider = data.providers.find((provider) => provider.id === data.activeProviderId);
+    if (!activeProvider?.models[0] || activeProvider.models.includes(conversation.model)) return;
+    // 当前会话模型若不在服务商模型列表中，自动切回可用模型，避免误发默认别名。
+    void updateModel(activeProvider.models[0]);
+  }, [conversation, data, runningIds, selectedId]);
+
   const createConversation = async (): Promise<void> => {
     const next = await window.desktopApi.createConversation();
     setData((current) => current && {
@@ -145,10 +153,6 @@ export default function App() {
   const selectProvider = async (id: string): Promise<void> => {
     const state = await window.desktopApi.selectProvider(id);
     applyProviderState(state);
-    const provider = state.providers.find((item) => item.id === id);
-    if (selectedId && provider?.models[0] && !provider.models.includes(conversation?.model ?? "")) {
-      await updateModel(provider.models[0]);
-    }
   };
 
   const sendMessage = async (prompt: string): Promise<void> => {
