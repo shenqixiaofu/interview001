@@ -1,4 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
 
 interface RunOptions {
   conversationId: string;
@@ -15,6 +17,11 @@ interface RunOptions {
 export class ClaudeRunner {
   // stdin 被显式禁用，因此这里只保留终止进程所需的通用 ChildProcess 类型。
   private readonly processes = new Map<string, ChildProcess>();
+  private readonly logDir: string;
+
+  constructor(logDir: string) {
+    this.logDir = logDir;
+  }
 
   async getVersion(): Promise<string> {
     return new Promise((resolve) => {
@@ -34,7 +41,10 @@ export class ClaudeRunner {
 
   // 每次发送对应一个 Claude 子进程，session_id 用于下一轮恢复上下文。
   async run(options: RunOptions): Promise<void> {
+    const debugFilePath = await this.createDebugFilePath(options.conversationId);
     const args = [
+      "--debug-file",
+      debugFilePath,
       "--print",
       options.prompt,
       "--output-format",
@@ -48,12 +58,12 @@ export class ClaudeRunner {
 
     const child = spawn("claude", args, {
       cwd: options.cwd,
-      // 每次运行显式注入当前服务商，避免依赖终端中的全局环境配置。
+      // 当前 Claude Code 版本从环境变量读取 API Key，这里显式注入避免误用本机 OAuth 状态。
       env: {
         ...process.env,
         NO_COLOR: "1",
         ANTHROPIC_BASE_URL: options.baseUrl,
-        ANTHROPIC_AUTH_TOKEN: options.apiKey
+        ANTHROPIC_API_KEY: options.apiKey
       },
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -71,26 +81,42 @@ export class ClaudeRunner {
         error ? reject(error) : resolve();
       };
 
+      // 统一包裹输出解析，避免 JSON 解析异常被直接吞掉。
+      const parseOutputLine = (line: string): void => {
+        try {
+          this.parseLine(line, options);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          finish(new Error(`Claude 输出解析失败\n日志文件：${debugFilePath}\n${reason}\n原始输出：${line.slice(0, 400)}`));
+          child.kill("SIGTERM");
+        }
+      };
+
       child.stdout.on("data", (data: Buffer) => {
         stdoutBuffer += data.toString("utf8");
         const lines = stdoutBuffer.split("\n");
         stdoutBuffer = lines.pop() ?? "";
-        for (const line of lines) this.parseLine(line, options);
+        for (const line of lines) parseOutputLine(line);
       });
 
       child.stderr.on("data", (data: Buffer) => {
         stderr += data.toString("utf8");
       });
 
-      child.once("error", (error) => finish(error));
+      child.once("error", (error) => {
+        finish(new Error(`启动 Claude Code 失败\n日志文件：${debugFilePath}\n${error.message}`));
+      });
       child.once("close", (code, signal) => {
-        if (stdoutBuffer.trim()) this.parseLine(stdoutBuffer, options);
+        if (stdoutBuffer.trim()) parseOutputLine(stdoutBuffer);
         if (signal === "SIGTERM" || signal === "SIGKILL") {
           finish(new Error("生成已停止"));
           return;
         }
         if (code !== 0) {
-          finish(new Error(stderr.trim() || `Claude Code 退出，状态码 ${code}`));
+          // 保留 Claude CLI 原始 stderr，方便直接定位鉴权或网关协议问题。
+          const detail = stderr.trim();
+          const summary = `Claude Code 退出，状态码 ${code}\n日志文件：${debugFilePath}`;
+          finish(new Error(detail ? `${summary}\n${detail}` : summary));
           return;
         }
         finish();
@@ -122,5 +148,12 @@ export class ClaudeRunner {
         options.onText(event.delta.text);
       }
     }
+  }
+
+  private async createDebugFilePath(conversationId: string): Promise<string> {
+    // 每次请求写入独立日志文件，避免并发会话互相覆盖。
+    await mkdir(this.logDir, { recursive: true });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    return path.join(this.logDir, `${timestamp}-${conversationId}.log`);
   }
 }

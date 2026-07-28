@@ -9,7 +9,7 @@ import type { ChatMessage, ProviderInput } from "./types";
 let mainWindow: BrowserWindow;
 let store: ConversationStore;
 let providerStore: ProviderStore;
-const runner = new ClaudeRunner();
+let runner: ClaudeRunner;
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -132,7 +132,12 @@ function registerIpc(): void {
       .catch(async (error: Error) => {
         const current = store.getConversation(conversationId);
         if (!current) return;
-        const errorText = error.message === "生成已停止" ? content || "生成已停止。" : content || error.message;
+        // 生成失败时保留已输出内容，同时把 CLI 原始错误拼上，避免 UI 吞掉关键诊断信息。
+        const errorText = error.message === "生成已停止"
+          ? content || "生成已停止。"
+          : content
+            ? `${content}\n\n[Claude Code 错误]\n${error.message}`
+            : error.message;
         const messages = current.messages.map((message) =>
           message.id === assistantMessage.id
             ? { ...message, content: errorText, status: "error" as const }
@@ -154,6 +159,8 @@ function registerIpc(): void {
 app.whenReady().then(async () => {
   store = new ConversationStore(app.getPath("userData"), app.getPath("home"));
   providerStore = new ProviderStore(app.getPath("userData"));
+  // 调试日志统一落到 userData 目录，便于失败后直接回看。
+  runner = new ClaudeRunner(path.join(app.getPath("userData"), "claude-debug"));
   await store.load();
   await providerStore.load();
   registerIpc();
