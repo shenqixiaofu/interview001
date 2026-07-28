@@ -42,7 +42,18 @@ export class ClaudeRunner {
   // 每次发送对应一个 Claude 子进程，session_id 用于下一轮恢复上下文。
   async run(options: RunOptions): Promise<void> {
     const debugFilePath = await this.createDebugFilePath(options.conversationId);
+    const childEnv = {
+      ...process.env,
+      NO_COLOR: "1",
+      ANTHROPIC_BASE_URL: options.baseUrl,
+      ANTHROPIC_API_KEY: options.apiKey
+    };
+    // 用户级 ~/.claude/settings.json 里已存在中转配置，这里显式剥离旧 token，避免继续污染当前会话。
+    delete childEnv.ANTHROPIC_AUTH_TOKEN;
     const args = [
+      "--bare",
+      "--setting-sources",
+      "project,local",
       "--debug-file",
       debugFilePath,
       "--print",
@@ -58,13 +69,8 @@ export class ClaudeRunner {
 
     const child = spawn("claude", args, {
       cwd: options.cwd,
-      // 当前 Claude Code 版本从环境变量读取 API Key，这里显式注入避免误用本机 OAuth 状态。
-      env: {
-        ...process.env,
-        NO_COLOR: "1",
-        ANTHROPIC_BASE_URL: options.baseUrl,
-        ANTHROPIC_API_KEY: options.apiKey
-      },
+      // 只使用当前会话注入的环境变量，避免 user settings 与本次服务商配置互相覆盖。
+      env: childEnv,
       stdio: ["ignore", "pipe", "pipe"]
     });
     this.processes.set(options.conversationId, child);
