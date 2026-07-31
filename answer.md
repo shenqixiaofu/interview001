@@ -1,1 +1,0 @@
-### 最擅长的技术栈，前端的话是vue3，后端的话是fastapi，使用的主力模型是中转站的gpt5.5 xhigh，agent的话主要使用codex和claudecode，但是claudecode没有合适的模型，只能用国模，所以现在还是用codex会多一些，使用方法就是开多agent，每个agent负责一个任务，我日常工作的时候就是一个agent负责规划（gpt5.6/claude-opus4.8），一个agent（gpt5.5）负责写代码，一个agent（gpt5.4）负责写文档，一个agent负责写测试用例，这样可以提高效率，也可以避免重复工作。
