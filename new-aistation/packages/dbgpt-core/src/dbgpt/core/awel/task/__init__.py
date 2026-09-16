@@ -1,1 +1,0 @@
-"""The module of Task."""

@@ -1,3 +1,0 @@
-"""
-DB-GPT Core Package
-"""

@@ -1,1 +1,0 @@
-"""NoSQL data source package."""

@@ -1,1 +1,0 @@
-"""Connector models module."""

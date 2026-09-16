@@ -1,1 +1,0 @@
-"""Module for common schemas."""

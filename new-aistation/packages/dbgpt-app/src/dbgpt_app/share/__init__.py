@@ -1,1 +1,0 @@
-"""Share link sub-package."""

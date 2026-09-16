@@ -1,1 +1,0 @@
-"""Connector service module."""
